@@ -1,3 +1,18 @@
+// make header file
+
+//  sudo apt-get install cproto
+//  cproto -I. key.c > key.h
+
+
+
+//build - linux
+
+//       gcc -O2 -Wall -Wextra -std=c11 key.c SDS.c -o feistel_enc
+
+
+
+
+
 
 
 #include <stdio.h>
@@ -17,7 +32,23 @@
 #define KEYLEN 32   // 256-bit = 32 bytes
 #define KEY_COUNT      26
 
-uint8_t KEY_OUT[KEY_COUNT][HALF_SIZE];
+uint8_t KEY_OUT[KEY_COUNT][HALF_HALF_SIZE];
+
+uint8_t master_key[KEY_COUNT][HALF_HALF_SIZE];
+
+
+static const uint8_t C1[HALF_SIZE] = {
+    0x13,0x37,0xA9,0x5C,0x01,0x02,0x03,0x04,
+    0x55,0xAA,0x10,0x20,0x30,0x40,0xDE,0xAD
+};
+static const uint8_t C2[HALF_SIZE] = {
+    0xC0,0xFF,0xEE,0x12,0x9B,0x7A,0x66,0xD4,
+    0x0F,0x1E,0x2D,0x3C,0x4B,0x5A,0x69,0x78
+};
+
+
+
+
 // ============================
 //   /2 - *2
 // ============================
@@ -108,10 +139,10 @@ static void rotr_bytes_generic(const uint8_t *in, uint8_t *out, size_t n, unsign
 
 
 
-void print_key_out(uint8_t KEY_OUT[KEY_COUNT][HALF_SIZE]) {
+void print_key_out(uint8_t KEY_OUT[KEY_COUNT][HALF_HALF_SIZE]) {
     for (int i = 0; i < KEY_COUNT; i++) {
         printf("KEY_OUT[%d]: ", i);
-        for (int j = 0; j < HALF_SIZE; j++) {
+        for (int j = 0; j < HALF_HALF_SIZE; j++) {
             printf("%02X ", KEY_OUT[i][j]);
         }
         printf("\n");
@@ -188,7 +219,7 @@ static int base64_decode(const char *in, uint8_t *out, size_t out_cap, size_t *o
 }
 
 // Reads a base64 key from stdin, decodes, and requires exactly 32 bytes (256-bit)
-static int read_key_256bit_base64(uint8_t master_key[KEYLEN]) {
+static int read_key_256bit_base64(uint8_t master_key[KEY_COUNT][HALF_HALF_SIZE]) {
     char key_in[4096];
 
     printf("Enter a 256-bit key in Base64 (should decode to exactly 32 bytes):\n");
@@ -201,7 +232,9 @@ static int read_key_256bit_base64(uint8_t master_key[KEYLEN]) {
     key_in[klen] = '\0';
 
     size_t out_len = 0;
-    int rc = base64_decode(key_in, master_key, KEYLEN, &out_len);
+    int rc = base64_decode(key_in, &master_key[0][0], sizeof master_key, &out_len);
+
+  //  int rc = base64_decode(key_in, master_key, KEYLEN, &out_len);
     if (rc != 0) {
         fprintf(stderr, "Error: invalid Base64 key.\n");
         return 1;
@@ -217,6 +250,14 @@ static int read_key_256bit_base64(uint8_t master_key[KEYLEN]) {
 
 
 
+// decode base64 string to 32-byte key
+static int read_key_256bit_base64_from_str(const char *b64str, uint8_t *out_key) {
+    size_t out_len = 0;
+    int rc = base64_decode(b64str, out_key, KEYLEN, &out_len); // base64_decode از قبل داری
+    if (rc != 0) return 1;
+    if (out_len != KEYLEN) return 1;
+    return 0;
+}
 
 
 
@@ -299,7 +340,7 @@ static void feistel_round_inv(const uint8_t f_out[HALF_SIZE],
 
 
 // ============================
-//
+//encrypt_block
 // ============================
 
 
@@ -311,14 +352,13 @@ static void encrypt_block(const uint8_t master_key[KEYLEN]) {
         return;
     }
 
-     uint8_t LC[HALF_SIZE], RC[HALF_SIZE];
-      uint8_t C1[HALF_SIZE], C2[HALF_SIZE];
-
-     xor_generic(L,C1, LC, HALF_SIZE);
-      xor_generic(R,C2,RC, HALF_SIZE);
+    uint8_t LC[HALF_SIZE], RC[HALF_SIZE];
 
 
-    for (int round = 0; round <= 15; round++) {
+    xor_generic(L,C1, LC, HALF_SIZE);
+    xor_generic(R,C2,RC, HALF_SIZE);
+
+    for (int round = 0; round <40; round++) {
 
         uint8_t feistelout_R[HALF_SIZE];
         uint8_t feistelout_L[HALF_SIZE];
@@ -327,10 +367,10 @@ static void encrypt_block(const uint8_t master_key[KEYLEN]) {
         uint8_t xorout_two[HALF_SIZE];
         uint8_t feistelout_LSH[HALF_SIZE];
 
-        feistel_round(RC, master_key, round, feistelout_R);
-        feistel_round(LC, master_key, round, feistelout_L);
+        feistel_round(RC,master_key,round ,feistelout_R);
+        feistel_round(LC,master_key,round ,feistelout_L);
 
-        rotl_bytes_generic(feistelout_L, feistelout_LSH, 8, 43);
+        rotl_bytes_generic(feistelout_L, feistelout_LSH, HALF_SIZE, 43);
         xor_generic(feistelout_LSH,feistelout_R, xorout_one, HALF_SIZE);
 
         feistel_round(xorout_one, master_key, round, feistelout_M);
@@ -343,66 +383,91 @@ static void encrypt_block(const uint8_t master_key[KEYLEN]) {
             L[i] = oldR;
 
         }
-        for (round = 16; round <= 40; round++) {
-                 uint8_t R1[HALF_HALF_SIZE], R2[HALF_HALF_SIZE];
-            if (round == 16) {
+
+
+
+        uint8_t R1[HALF_HALF_SIZE], R2[HALF_HALF_SIZE];
+        if (round == 16) {
+            split_generic(R, HALF_SIZE, R1, R2);
+            memcpy(KEY_OUT[round - 16], R1, HALF_HALF_SIZE);
+            memcpy(KEY_OUT[round- 15], R2, HALF_HALF_SIZE);
+        }else if (round == 17) {
                 split_generic(R, HALF_SIZE, R1, R2);
-                memcpy(KEY_OUT[round - 16], R1, HALF_SIZE);
-                memcpy(KEY_OUT[round- 15], R2, HALF_SIZE);
-            } else if ((round % 2) == 0) {
-                split_generic(R, HALF_SIZE, R1, R2);
-                memcpy(KEY_OUT[round - 15], R, HALF_SIZE);
-                memcpy(KEY_OUT[round - 14], L, HALF_SIZE);
-            }
+                memcpy(KEY_OUT[round - 15], R1, HALF_HALF_SIZE);
+                memcpy(KEY_OUT[round- 14], R2, HALF_HALF_SIZE);
+
+        } else if (round > 16 && (round % 2) == 0) {
+            split_generic(R, HALF_SIZE, R1, R2);
+            memcpy(KEY_OUT[round - 15], R1, HALF_HALF_SIZE);
+            memcpy(KEY_OUT[round - 14], R2, HALF_HALF_SIZE);
+        }   else if( round == 39 ) {
+            split_generic(R, HALF_SIZE, R1, R2);
+            memcpy(KEY_OUT[round - 15], R1, HALF_HALF_SIZE);
+            memcpy(KEY_OUT[round - 14], R2, HALF_HALF_SIZE);
         }
 
 
-    }
-
-
 }
-
-
-
-
+}
 
 
 // ============================
 //   MAIN
 // ============================
 
-int main(int argc, char *argv[])
+
+int key_main(int argc, char *argv[],
+             uint8_t out_key_out[KEY_COUNT][HALF_HALF_SIZE])
 {
-    // 1) check args
-    if (argc != 1) {
-        fprintf(stderr, "Usage: %s <key-base64> \n", argv[0]);
+uint8_t master_key[KEYLEN];
+char base64_buf[256];
+
+if (!out_key_out) return 2;
+
+const char *base64_str = NULL;
+
+// ✅ فقط اگر 3 آرگومان بعد از نام برنامه داریم (key + in + out) از argv کلید بگیر
+if (argc == 4) {
+        base64_str = argv[1];
+} else {
+        printf("Enter Base64 key: ");
+        fflush(stdout);
+
+        if (!fgets(base64_buf, sizeof base64_buf, stdin)) {
+            fprintf(stderr, "Failed to read key\n");
+            return 1;
+        }
+
+        base64_buf[strcspn(base64_buf, "\r\n")] = 0;
+
+        if (base64_buf[0] == '\0') {
+            fprintf(stderr, "Empty key entered\n");
+            return 1;
+        }
+
+        base64_str = base64_buf;
+}
+
+if (read_key_256bit_base64_from_str(base64_str, master_key) != 0) {
+        printf("Failed to parse Base64 key\n");
         return 1;
-    }
+}
 
+encrypt_block(master_key);  // KEY_OUT پر می‌شود
+memcpy(out_key_out, KEY_OUT, sizeof(KEY_OUT));
+return 0;
+}
+//---------------
 
-    // 4) read key
-    char key_in[KEYLEN + 4];      // +4 برای CRLF و null
-    uint8_t master_key[KEYLEN];
+//int main(int argc, char *argv[])
+//{
+//uint8_t out[KEY_COUNT][HALF_HALF_SIZE];
 
-    printf("Enter a %d-character key (exactly %d chars):\n", KEYLEN, KEYLEN);
+//int rc = key_main(argc, argv, out);
+//if (rc != 0) return rc;
 
-    if (!fgets(key_in, sizeof(key_in), stdin)) {
-        fprintf(stderr, "Failed to read key.\n");
-        return 1;
-    }
+//// حالا به جای KEY_OUT از out استفاده کن
+//print_key_out(out);
 
-    // remove \r\n
-    size_t klen = strcspn(key_in, "\r\n");
-    key_in[klen] = '\0';
-
-    // check length
-    if (klen != (size_t)KEYLEN) {
-        fprintf(stderr, "Error: key length is %zu, but must be exactly %d characters.\n", klen, KEYLEN);
-        return 1;
-    }
-    encrypt_block(master_key);
-    memcpy(master_key, key_in, KEYLEN);
-
-
-    print_key_out(KEY_OUT);
-
+//return 0;
+//}
