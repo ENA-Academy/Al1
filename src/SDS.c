@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 // -------------------- parity (xor of bits) for  GF(2) --------------------
 static inline uint8_t parity8(uint8_t x) {
@@ -135,66 +136,29 @@ static const uint8_t *SBOX_PRE[4]  = { SBOX_A, SBOX_B, SBOX_A, SBOX_B };
 static const uint8_t *SBOX_POST[4] = { SBOX_B, SBOX_A, SBOX_B, SBOX_A };
 
 // -------------------- One SDS round for 32-bit state --------------------
- uint32_t sds32_round(uint32_t x) {
-    // split into 4 bytes (b0 is LSB)
-    uint8_t b0 = (uint8_t)(x);
-    uint8_t b1 = (uint8_t)(x >> 8);
-    uint8_t b2 = (uint8_t)(x >> 16);
-    uint8_t b3 = (uint8_t)(x >> 24);
 
+
+void sds32_round(uint8_t b[4])
+{
     // S before diffusion (4 S-boxes)
-    b0 = SBOX_PRE[0][b0];
-    b1 = SBOX_PRE[1][b1];
-    b2 = SBOX_PRE[2][b2];
-    b3 = SBOX_PRE[3][b3];
+    b[0] = SBOX_PRE[0][b[0]];
+    b[1] = SBOX_PRE[1][b[1]];
+    b[2] = SBOX_PRE[2][b[2]];
+    b[3] = SBOX_PRE[3][b[3]];
 
     // D (4 independent 8x8 matrices)
-    b0 = mat8_mul_gf2(b0, M0);
-    b1 = mat8_mul_gf2(b1, M1);
-    b2 = mat8_mul_gf2(b2, M2);
-    b3 = mat8_mul_gf2(b3, M3);
+    b[0] = mat8_mul_gf2(b[0], M0);
+    b[1] = mat8_mul_gf2(b[1], M1);
+    b[2] = mat8_mul_gf2(b[2], M2);
+    b[3] = mat8_mul_gf2(b[3], M3);
 
     // S after diffusion (4 S-boxes)
-    b0 = SBOX_POST[0][b0];
-    b1 = SBOX_POST[1][b1];
-    b2 = SBOX_POST[2][b2];
-    b3 = SBOX_POST[3][b3];
-
-    // pack back
-    return ((uint32_t)b0) | ((uint32_t)b1 << 8) | ((uint32_t)b2 << 16) | ((uint32_t)b3 << 24);
+    b[0] = SBOX_POST[0][b[0]];
+    b[1] = SBOX_POST[1][b[1]];
+    b[2] = SBOX_POST[2][b[2]];
+    b[3] = SBOX_POST[3][b[3]];
 }
 
-
-uint32_t sds32_round_inv(uint32_t y)
-{
-    uint8_t b0 = (uint8_t)(y);
-    uint8_t b1 = (uint8_t)(y >> 8);
-    uint8_t b2 = (uint8_t)(y >> 16);
-    uint8_t b3 = (uint8_t)(y >> 24);
-
-    // forward last step was post S-boxes: B,A,B,A  => inverse first: invB,invA,invB,invA
-    b0 = invB(b0);
-    b1 = invA(b1);
-    b2 = invB(b2);
-    b3 = invA(b3);
-
-    // forward D used M0..M3 => inverse uses M0_INV..M3_INV
-    b0 = mat8_mul_gf2(b0, M0_INV);
-    b1 = mat8_mul_gf2(b1, M1_INV);
-    b2 = mat8_mul_gf2(b2, M2_INV);
-    b3 = mat8_mul_gf2(b3, M3_INV);
-
-    // forward first step was pre S-boxes: A,B,A,B => inverse: invA,invB,invA,invB
-    b0 = invA(b0);
-    b1 = invB(b1);
-    b2 = invA(b2);
-    b3 = invB(b3);
-
-    return ((uint32_t)b0) |
-           ((uint32_t)b1 << 8) |
-           ((uint32_t)b2 << 16) |
-           ((uint32_t)b3 << 24);
-}
 
 //------------- Binary I/O (MSB first) --------------------
 static int parse_bin32_msb_first(const char *s, uint32_t *out) {
@@ -227,3 +191,24 @@ static void print_bin32_msb_first(uint32_t v) {
 //    print_bin32_msb_first(y);
 //    return 0;
 //}
+
+
+
+#if MULTIPLY_AS_A_FUNCTION
+static uint8_t Multiply(uint8_t x, uint8_t y)
+{
+  return (((y & 1) * x) ^
+       ((y>>1 & 1) * xtime(x)) ^
+       ((y>>2 & 1) * xtime(xtime(x))) ^
+       ((y>>3 & 1) * xtime(xtime(xtime(x)))) ^
+       ((y>>4 & 1) * xtime(xtime(xtime(xtime(x)))))); /* this last call to xtime() can be omitted */
+  }
+#else
+#define Multiply(x, y)                                \
+      (  ((y & 1) * x) ^                              \
+      ((y>>1 & 1) * xtime(x)) ^                       \
+      ((y>>2 & 1) * xtime(xtime(x))) ^                \
+      ((y>>3 & 1) * xtime(xtime(xtime(x)))) ^         \
+      ((y>>4 & 1) * xtime(xtime(xtime(xtime(x))))))   \
+
+#endif
