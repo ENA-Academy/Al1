@@ -59,7 +59,12 @@ static void G(const uint8_t B[KEY_HALF_SIZE],
                           const uint8_t master_key[KEYLEN],
                           uint8_t G_out[KEY_HALF_SIZE])
 {
-    uint8_t L[KEY_HH_SIZE], R[KEY_HH_SIZE],keyL[KEY_HH_SIZE];
+    uint8_t buffer1[KEY_HH_SIZE];
+    uint8_t buffer2[KEY_HH_SIZE];
+    uint8_t *L = buffer1;
+    uint8_t *R = buffer2;
+
+    uint8_t keyL[KEY_HH_SIZE];
      uint8_t L1[KEY_HH_SIZE/2], R1[KEY_HH_SIZE/2];
       uint8_t L2[KEY_HH_SIZE/2], R2[KEY_HH_SIZE/2];
 
@@ -84,15 +89,10 @@ static void G(const uint8_t B[KEY_HALF_SIZE],
     join_generic(R, KEY_HALF_SIZE/2, L2, R2);
     xor_generic(L, R , L, KEY_HH_SIZE);
 
+         uint8_t *tmp = L;
+            L = R;
+            R = tmp;
 
-   
-
-    for (int i = 0; i < KEY_HH_SIZE; i++) {
-        uint8_t oldR = R[i];
-        R[i] = L[i];
-        L[i] = oldR;
-
-    }
 
     (void)join_generic(G_out, KEY_HALF_SIZE, L, R);
 }
@@ -108,7 +108,12 @@ static void G(const uint8_t B[KEY_HALF_SIZE],
 
 
 static void encrypt_block(const uint8_t master_key[KEYLEN]) {
-    uint8_t L[KEY_HALF_SIZE], R[KEY_HALF_SIZE];
+    
+
+    uint8_t buffer1[KEY_HALF_SIZE];
+    uint8_t buffer2[KEY_HALF_SIZE];
+    uint8_t *L = buffer1;
+    uint8_t *R = buffer2;
 
     if (split_generic(master_key, KEY_BLOCK_SIZE, L, R) != 0) {
         return;
@@ -156,12 +161,11 @@ static void encrypt_block(const uint8_t master_key[KEYLEN]) {
         }
 
             
-        for (int i = 0; i < KEY_HALF_SIZE; i++) {
-            uint8_t oldR = R[i];
-            R[i] = L[i];
-            L[i] = oldR;
+   
+         uint8_t *tmp = L;
+            L = R;
+            R = tmp;
 
-        }
 
 
 

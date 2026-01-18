@@ -31,6 +31,7 @@
 #include "SDS.h"
 #include "tools.h"
 
+
 #ifdef _WIN32
 #include <windows.h>   // QueryPerformanceCounter
 #else
@@ -150,7 +151,13 @@ static void F(const uint8_t in[HALF_SIZE],
 
 
 static void encrypt_block(uint8_t block[BLOCK_SIZE], const uint8_t key[KEY_COUNT][KEY_HALF_SIZE]) {
-    uint8_t L[HALF_SIZE], R[HALF_SIZE];
+    
+
+    
+    uint8_t buffer1[HALF_SIZE];
+    uint8_t buffer2[HALF_SIZE];
+    uint8_t *L = buffer1;
+    uint8_t *R = buffer2;
 
    split_generic(block, BLOCK_SIZE, L, R);
 
@@ -178,18 +185,19 @@ static void encrypt_block(uint8_t block[BLOCK_SIZE], const uint8_t key[KEY_COUNT
 
        xor_generic(L,RF, L, HALF_SIZE);
 
-        for (int i = 0; i < HALF_SIZE; i++) {
-            uint8_t oldR = R[i];
-              R[i] = L[i];
-            L[i] = oldR;
 
-        }
-
-
-        if(round ==11){
+          if(round ==11){
         xor_generic(key[25],L, L, HALF_SIZE);
         xor_generic(key[24],R, R, HALF_SIZE);
         }
+
+         uint8_t *tmp = L;
+            L = R;
+            R = tmp;
+
+
+
+     
     }
 
 
