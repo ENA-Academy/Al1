@@ -4,7 +4,7 @@
 //
 // Build (Linux):
 //
-//   gcc -O2 -Wall -Wextra -std=c11 key.c SDS.c tools.c feistel.c -o feistel_en
+//   gcc -O2 -Wall -Wextra -std=c11 key.c SDS.c tools.c feistel.c file_handling_enc_mt.c -o feistel_en
 //   (روی بعضی لینوکس‌های قدیمی ممکنه نیاز بشه: ... -lrt)
 //
 // Build (Windows - MSVC, Developer Command Prompt):
@@ -51,6 +51,7 @@
 #define KEY_COUNT 26
 
 
+#include "file_handling_enc_mt.h"
 uint8_t key[KEY_COUNT][KEY_HALF_SIZE];
 
 
@@ -98,7 +99,7 @@ static double now_seconds(void) {
 
 
 static void F(const uint8_t in[HALF_SIZE],
-                          uint8_t f_out[HALF_SIZE])
+              uint8_t f_out[HALF_SIZE])
 {
     uint8_t buffer1[HALF_HALF_SIZE];
     uint8_t buffer2[HALF_HALF_SIZE];
@@ -110,7 +111,7 @@ static void F(const uint8_t in[HALF_SIZE],
 
 
 
-//enter SDS
+    //enter SDS
 
 
 
@@ -119,9 +120,9 @@ static void F(const uint8_t in[HALF_SIZE],
     sds32_round(newL);
     xor_generic(newL, newR , newR, HALF_HALF_SIZE);
 
-  sds32_round(newR);
+    sds32_round(newR);
 
- xor_generic(newR, newL , newR, HALF_HALF_SIZE);
+    xor_generic(newR, newL , newR, HALF_HALF_SIZE);
 
 
     // for (int i = 0; i < HALF_HALF_SIZE; i++) {
@@ -132,10 +133,10 @@ static void F(const uint8_t in[HALF_SIZE],
     // }
 
 
-// swap
- uint8_t *tmp = newL;
- newL = newR;
- newR = tmp;
+    // swap
+    uint8_t *tmp = newL;
+    newL = newR;
+    newR = tmp;
 
 
 
@@ -159,18 +160,18 @@ static void encrypt_block(uint8_t block[BLOCK_SIZE], const uint8_t key[KEY_COUNT
     uint8_t *L = buffer1;
     uint8_t *R = buffer2;
 
-   split_generic(block, BLOCK_SIZE, L, R);
+    split_generic(block, BLOCK_SIZE, L, R);
 
 
     for (int round = 0; round < ROUNDS; round++) {
 
 
-         uint8_t RF[HALF_SIZE];
-         uint8_t LSH[HALF_SIZE];
+        uint8_t RF[HALF_SIZE];
+        uint8_t LSH[HALF_SIZE];
 
 
-         xor_generic(key[round*2],L, L, HALF_SIZE);
-         xor_generic(key[(round*2)+1],R, R, HALF_SIZE);
+        xor_generic(key[round*2],L, L, HALF_SIZE);
+        xor_generic(key[(round*2)+1],R, R, HALF_SIZE);
 
 
 
@@ -179,47 +180,47 @@ static void encrypt_block(uint8_t block[BLOCK_SIZE], const uint8_t key[KEY_COUNT
         F(L,L);
 
         rotl_bytes_generic(L, LSH, 8, 43);
-       xor_generic(LSH,R,R, HALF_SIZE);
+        xor_generic(LSH,R,R, HALF_SIZE);
 
-      F(R, RF);
+        F(R, RF);
 
-       xor_generic(L,RF, L, HALF_SIZE);
+        xor_generic(L,RF, L, HALF_SIZE);
 
 
-          if(round ==11){
-        xor_generic(key[25],L, L, HALF_SIZE);
-        xor_generic(key[24],R, R, HALF_SIZE);
+        if(round ==11){
+            xor_generic(key[25],L, L, HALF_SIZE);
+            xor_generic(key[24],R, R, HALF_SIZE);
         }
 
-         uint8_t *tmp = L;
-            L = R;
-            R = tmp;
+        uint8_t *tmp = L;
+        L = R;
+        R = tmp;
 
 
 
-     
+
     }
 
 
-   (void)join_generic(block, BLOCK_SIZE, L, R);
+    (void)join_generic(block, BLOCK_SIZE, L, R);
 }
 
 
 static void decrypt_block(uint8_t block[BLOCK_SIZE],
                           const uint8_t key[KEY_COUNT][KEY_HALF_SIZE])
 {
-   uint8_t L[HALF_SIZE], R[HALF_SIZE];
-   if (split_generic(block, BLOCK_SIZE, L, R) != 0) {
+    uint8_t L[HALF_SIZE], R[HALF_SIZE];
+    if (split_generic(block, BLOCK_SIZE, L, R) != 0) {
         return;
-   }
+    }
 
-   for (int round = ROUNDS - 1; round >= 0; round--) {
+    for (int round = ROUNDS - 1; round >= 0; round--) {
 
         // --------- (A) Undo post-whitening of round 11 ----------
         // در encrypt اگر round==11 این XORها در انتهای راند انجام می‌شوند
         if (round == 11) {
-        xor_generic(key[25], L, L, HALF_SIZE);
-        xor_generic(key[24], R, R, HALF_SIZE);
+            xor_generic(key[25], L, L, HALF_SIZE);
+            xor_generic(key[24], R, R, HALF_SIZE);
         }
 
         // الان L و R برابر خروجی مرحله swap هستند:
@@ -279,9 +280,9 @@ static void decrypt_block(uint8_t block[BLOCK_SIZE],
         // آماده‌ی راند قبلی
         memcpy(L, Lk, HALF_SIZE);
         memcpy(R, Rk, HALF_SIZE);
-   }
+    }
 
-   (void)join_generic(block, BLOCK_SIZE, L, R);
+    (void)join_generic(block, BLOCK_SIZE, L, R);
 }
 
 
@@ -294,59 +295,66 @@ static void decrypt_block(uint8_t block[BLOCK_SIZE],
 
 
 
-
-//  file with padding and encrypt
-static int file_handling_enc(const char *in_path, const char *out_path,  const uint8_t key_out[KEY_COUNT][KEY_HALF_SIZE]) {
-    FILE *in = fopen(in_path, "rb");
-    if (!in) {
-        perror("fopen input");
-        return 1;
-    }
-
-    FILE *out = fopen(out_path, "wb");
-    if (!out) {
-        perror("fopen output");
-        fclose(in);
-        return 1;
-    }
-
-    uint8_t block[BLOCK_SIZE];
-    size_t n;
-
-    //encrypt for evry block
-    while ((n = fread(block, 1, BLOCK_SIZE, in)) == BLOCK_SIZE) {
-        encrypt_block(block, key);
-        if (fwrite(block, 1, BLOCK_SIZE, out) != BLOCK_SIZE) {
-            perror("fwrite");
-            fclose(in);
-            fclose(out);
-            return 1;
-        }
-    }
-
-    if (ferror(in)) {
-        perror("fread");
-        fclose(in);
-        fclose(out);
-        return 1;
-    }
-
-    //padding
-    uint8_t pad = (uint8_t)(BLOCK_SIZE - n);
-    memset(block + n, pad, pad);
-
-    encrypt_block(block, key);
-    if (fwrite(block, 1, BLOCK_SIZE, out) != BLOCK_SIZE) {
-        perror("fwrite last");
-        fclose(in);
-        fclose(out);
-        return 1;
-    }
-
-    fclose(in);
-    fclose(out);
-    return 0;
+static int file_handling_enc(const char *in_path,
+                             const char *out_path,
+                             const uint8_t key_out[KEY_COUNT][KEY_HALF_SIZE])
+{
+    return file_handling_enc_mt(in_path, out_path, key_out, 0); // 0 => threads auto
 }
+
+//test multithread
+// //  file with padding and encrypt
+// static int file_handling_enc(const char *in_path, const char *out_path,  const uint8_t key_out[KEY_COUNT][KEY_HALF_SIZE]) {
+//     FILE *in = fopen(in_path, "rb");
+//     if (!in) {
+//         perror("fopen input");
+//         return 1;
+//     }
+
+//     FILE *out = fopen(out_path, "wb");
+//     if (!out) {
+//         perror("fopen output");
+//         fclose(in);
+//         return 1;
+//     }
+
+//     uint8_t block[BLOCK_SIZE];
+//     size_t n;
+
+//     //encrypt for evry block
+//     while ((n = fread(block, 1, BLOCK_SIZE, in)) == BLOCK_SIZE) {
+//         encrypt_block(block, key);
+//         if (fwrite(block, 1, BLOCK_SIZE, out) != BLOCK_SIZE) {
+//             perror("fwrite");
+//             fclose(in);
+//             fclose(out);
+//             return 1;
+//         }
+//     }
+
+//     if (ferror(in)) {
+//         perror("fread");
+//         fclose(in);
+//         fclose(out);
+//         return 1;
+//     }
+
+//     //padding
+//     uint8_t pad = (uint8_t)(BLOCK_SIZE - n);
+//     memset(block + n, pad, pad);
+
+//     encrypt_block(block, key);
+//     if (fwrite(block, 1, BLOCK_SIZE, out) != BLOCK_SIZE) {
+//         perror("fwrite last");
+//         fclose(in);
+//         fclose(out);
+//         return 1;
+//     }
+
+//     fclose(in);
+//     fclose(out);
+//     return 0;
+// }
 
 
 static int file_handling_dec(const char *in_path, const char *out_path, const uint8_t key[KEY_COUNT][KEY_HALF_SIZE])
@@ -516,3 +524,4 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+#include "file_handling_enc_mt.c"
